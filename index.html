@@ -46,6 +46,7 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.app{position:re
 .modal{position:fixed;inset:0;background:rgba(31,48,62,.28);display:none;align-items:flex-end;justify-content:center;z-index:40;backdrop-filter:blur(6px)}.modal.open{display:flex}.sheet{width:min(760px,100%);background:rgba(235,244,248,.9);border:1px solid rgba(255,255,255,.6);backdrop-filter:blur(30px);border-radius:32px 32px 0 0;padding:19px 17px calc(24px + var(--safe-bottom));max-height:90vh;overflow:auto;box-shadow:0 -18px 50px rgba(43,63,79,.18)}.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.sheet h3{margin:0;font-size:23px}.form{display:grid;gap:12px}.field{display:grid;gap:6px}.field label{font-size:13px;color:var(--muted);font-weight:750}.field input,.field select,.field textarea{width:100%;border:1px solid rgba(255,255,255,.7);background:rgba(255,255,255,.58);border-radius:17px;padding:14px;color:var(--text)}.field textarea{min-height:78px}.amount-input{font-size:38px;font-weight:850;text-align:center}.sheet-actions{display:grid;grid-template-columns:1fr 1.4fr;gap:10px;margin-top:4px}.toast{position:fixed;left:50%;bottom:calc(125px + var(--safe-bottom));transform:translateX(-50%) translateY(20px);background:rgba(21,36,50,.88);color:white;padding:10px 15px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:60;backdrop-filter:blur(15px)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}.file-input{display:none}.danger-text{color:var(--danger)}
 @media(max-width:520px){.app{padding:18px 12px calc(108px + var(--safe-bottom))}.month-btn{font-size:31px}.primary-btn{padding:11px 13px}.summary{padding:18px}.remaining-wrap{grid-template-columns:1fr 104px}.ring{width:100px;height:100px}.remaining .value{font-size:38px}.category-list,.txn-list{padding:6px 10px}.category-card,.txn{grid-template-columns:46px 1fr auto;padding:12px 2px}.cat-icon{width:43px;height:43px}.cat-right{min-width:82px}.fab{width:64px;height:64px}}
 
+.budget-row{grid-template-columns:1fr 100px auto;gap:8px}.budget-name{display:flex;align-items:center;gap:8px;min-width:0}.budget-name strong{overflow-wrap:anywhere}.budget-handle,.budget-control{border:0;border-radius:10px;background:rgba(255,255,255,.4);color:var(--text);padding:8px}.budget-handle{touch-action:none;cursor:grab;font-size:20px}.budget-actions{display:flex;gap:3px}.budget-control{padding:8px 6px}.budget-control:disabled{opacity:.3;cursor:default}.budget-row.dragging{opacity:.5}.budget-row.drop-target{box-shadow:inset 0 3px var(--blue)}.category-form{display:grid;grid-template-columns:1fr 100px auto;gap:8px;margin:14px 0}.category-form input{min-width:0;width:100%;padding:10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.5)}.category-help{font-size:12px;color:var(--muted);margin:0 0 10px}@media(max-width:420px){.budget-row{grid-template-columns:1fr 80px}.budget-actions{grid-column:1/-1;justify-content:flex-end}.category-form{grid-template-columns:1fr 90px}.category-form button{grid-column:1/-1}}
 </style>
 </head>
 <body>
@@ -91,7 +92,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.app{position:re
       <div class="section-head"><h2>設定</h2></div>
       <div class="settings-card">
         <h3>每月分類預算</h3>
+        <p class="category-help">拖曳 ⋮⋮ 排列分類，也可使用 ↑ ↓ 按鈕。</p>
         <div id="budgetSettings"></div>
+        <form class="category-form" id="categoryForm"><input id="newCategoryName" aria-label="新分類名稱" placeholder="新分類名稱" maxlength="40" required><input id="newCategoryBudget" aria-label="新分類預算" type="number" min="0" step="1" placeholder="預算" required><button class="ghost-btn" type="submit">新增分類</button></form>
         <div style="margin-top:14px;display:flex;justify-content:space-between;gap:12px;align-items:center"><strong>總預算</strong><strong id="settingsTotal">$0</strong></div>
       </div>
       <div class="settings-card">
@@ -180,10 +183,19 @@ const state = {
   budgets: JSON.parse(localStorage.getItem('budgetBudgets') || 'null') || {...DEFAULT_BUDGETS},
   data: JSON.parse(localStorage.getItem('BudgetTrackingData') || '{}')
 };
+let budgetOrder=JSON.parse(localStorage.getItem('budgetCategoryOrder')||'null')||[];
+function categoryKeys(){return [...new Set([...budgetOrder.filter(k=>Object.hasOwn(state.budgets,k)),...Object.keys(state.budgets)])]}
+function renderCategoryOptions(selected=$('#category').value){
+ const keys=categoryKeys();
+ $('#category').innerHTML=keys.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(categoryLabel(c))}</option>`).join('');
+ if(selected && !keys.includes(selected)){$('#category').insertAdjacentHTML('beforeend',`<option value="${escapeHtml(selected)}">${escapeHtml(categoryLabel(selected))}（已刪除分類）</option>`)}
+ if(selected)$('#category').value=selected;
+}
+function moveCategory(cat,target){const keys=categoryKeys(),from=keys.indexOf(cat);if(from<0||target<0||target>=keys.length)return;keys.splice(from,1);keys.splice(target,0,cat);budgetOrder=keys;save();render();renderCategoryOptions()}
 function money(n){return new Intl.NumberFormat('zh-TW',{style:'currency',currency:'TWD',maximumFractionDigits:0}).format(Number(n)||0).replace('NT$','$');}
 function monthKey(d=state.month){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`}
 function monthTitle(d=state.month){return `${d.getFullYear()} 年 ${d.getMonth()+1} 月預算`}
-function save(){localStorage.setItem('BudgetTrackingData',JSON.stringify(state.data));localStorage.setItem('budgetBudgets',JSON.stringify(state.budgets));}
+function save(){localStorage.setItem('budgetCategoryOrder',JSON.stringify(categoryKeys()));localStorage.setItem('BudgetTrackingData',JSON.stringify(state.data));localStorage.setItem('budgetBudgets',JSON.stringify(state.budgets));}
 function monthTxns(){return Array.isArray(state.data[monthKey()]) ? state.data[monthKey()] : []}
 function calc(){
   const totals={}; Object.keys(state.budgets).forEach(k=>totals[k]=0);
@@ -199,7 +211,7 @@ function render(){
 }
 function renderCategories(c){
   const host=$('#categoryList');host.innerHTML='';
-  Object.entries(state.budgets).forEach(([cat,budget])=>{
+  categoryKeys().forEach(cat=>{const budget=state.budgets[cat];
     const spent=c.totals[cat]||0, remain=Number(budget)-spent, pct=Number(budget)?remain/Number(budget)*100:0, used=Number(budget)?spent/Number(budget)*100:0;
     const el=document.createElement('div');el.className='category-card';
     el.innerHTML=`<div class="cat-icon">${svgIcon(ICONS[cat])}</div><div class="cat-main"><div class="cat-title">${escapeHtml(categoryLabel(cat))}</div><div class="cat-sub">已支出 ${money(spent)} / ${money(budget)}</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,used))}%"></span></div></div><div class="cat-right"><strong>${money(remain)}</strong><span>${pct.toFixed(1)}%</span></div>`;
@@ -214,13 +226,24 @@ function renderTxns(){
 }
 function renderSettings(){
   const host=$('#budgetSettings');host.innerHTML='';
-  Object.entries(state.budgets).forEach(([cat,val])=>{const row=document.createElement('div');row.className='budget-row';row.innerHTML=`<div style="display:flex;align-items:center;gap:10px"><span class="cat-icon" style="width:36px;height:36px;border-radius:12px">${svgIcon(ICONS[cat])}</span><strong>${escapeHtml(categoryLabel(cat))}</strong></div><input class="money-input" type="number" min="0" step="1" value="${val}" data-cat="${cat}">`;host.appendChild(row)});
-  host.querySelectorAll('input').forEach(inp=>inp.addEventListener('change',()=>{state.budgets[inp.dataset.cat]=Number(inp.value)||0;save();render()}));
+  const keys=categoryKeys();
+  keys.forEach((cat,index)=>{
+    const row=document.createElement('div');row.className='budget-row';row.dataset.category=cat;
+    row.innerHTML=`<div class="budget-name"><button type="button" class="budget-handle" aria-label="拖曳排列 ${escapeHtml(categoryLabel(cat))}">⋮⋮</button><strong>${escapeHtml(categoryLabel(cat))}</strong></div><input class="money-input" aria-label="${escapeHtml(categoryLabel(cat))}預算" type="number" min="0" step="1" value="${state.budgets[cat]}"><div class="budget-actions"><button type="button" class="budget-control" data-action="up" aria-label="上移" ${index===0?'disabled':''}>↑</button><button type="button" class="budget-control" data-action="down" aria-label="下移" ${index===keys.length-1?'disabled':''}>↓</button><button type="button" class="budget-control danger-text" data-action="delete" aria-label="刪除 ${escapeHtml(categoryLabel(cat))}">刪除</button></div>`;
+    row.querySelector('input').addEventListener('change',e=>{const value=Number(e.target.value);if(!Number.isFinite(value)||value<0){e.target.value=state.budgets[cat];return}state.budgets[cat]=value;save();render()});
+    row.querySelectorAll('[data-action]').forEach(button=>button.onclick=()=>{const action=button.dataset.action;if(action==='delete'){if(!confirm(`刪除「${categoryLabel(cat)}」的預算分類？既有交易紀錄會保留。`))return;delete state.budgets[cat];budgetOrder=categoryKeys();save();render();renderCategoryOptions();toast('已刪除分類')}else moveCategory(cat,index+(action==='up'?-1:1))});
+    const handle=row.querySelector('.budget-handle');let target=index;
+    handle.addEventListener('pointerdown',e=>{if(e.button!==0)return;handle.setPointerCapture(e.pointerId);row.classList.add('dragging');target=index});
+    handle.addEventListener('pointermove',e=>{if(!handle.hasPointerCapture(e.pointerId))return;const hit=document.elementFromPoint(e.clientX,e.clientY)?.closest('.budget-row');host.querySelectorAll('.drop-target').forEach(r=>r.classList.remove('drop-target'));if(hit&&host.contains(hit)){target=keys.indexOf(hit.dataset.category);hit.classList.add('drop-target')}});
+    const finish=e=>{if(!handle.hasPointerCapture(e.pointerId))return;handle.releasePointerCapture(e.pointerId);row.classList.remove('dragging');host.querySelectorAll('.drop-target').forEach(r=>r.classList.remove('drop-target'));if(e.type==='pointerup'&&target!==index)moveCategory(cat,target)};
+    handle.addEventListener('pointerup',finish);handle.addEventListener('pointercancel',finish);host.appendChild(row);
+  });
   $('#settingsTotal').textContent=money(Object.values(state.budgets).reduce((a,b)=>a+Number(b||0),0));
 }
 function openModal(txn=null){
   $('#entryModal').classList.add('open');$('#entryModal').setAttribute('aria-hidden','false');
-  $('#modalTitle').textContent=txn?'編輯交易':'新增交易';$('#editId').value=txn?.id||'';$('#amount').value=txn?.amount??'';$('#category').value=txn?.category||Object.keys(state.budgets)[0];$('#date').value=txn?.date||new Date().toISOString().slice(0,10);$('#note').value=txn?.note||'';$('#deleteEntry').style.display=txn?'inline-flex':'none';setTimeout(()=>$('#amount').focus(),80);
+  renderCategoryOptions(txn?.category||categoryKeys()[0]);
+  $('#modalTitle').textContent=txn?'編輯交易':'新增交易';$('#editId').value=txn?.id||'';$('#amount').value=txn?.amount??'';$('#category').value=txn?.category||categoryKeys()[0]||'';$('#date').value=txn?.date||new Date().toISOString().slice(0,10);$('#note').value=txn?.note||'';$('#deleteEntry').style.display=txn?'inline-flex':'none';setTimeout(()=>$('#amount').focus(),80);
 }
 function closeModal(){ $('#entryModal').classList.remove('open');$('#entryModal').setAttribute('aria-hidden','true');$('#entryForm').reset();$('#editId').value=''; }
 function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -242,7 +265,14 @@ function switchPage(page){
  currentNavIndex=next;$('#fab').style.display=page==='settings'?'none':'block'
 }
 
-$('#category').innerHTML=Object.keys(state.budgets).map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(categoryLabel(c))}</option>`).join('');
+renderCategoryOptions();
+$('#categoryForm').addEventListener('submit',e=>{
+ e.preventDefault();const name=categoryLabel($('#newCategoryName').value.trim()).trim(),budget=Number($('#newCategoryBudget').value);
+ if(!name||!Number.isFinite(budget)||budget<0){toast('請輸入分類名稱與有效預算');return}
+ if(Object.keys(state.budgets).some(k=>categoryLabel(k).toLowerCase()===name.toLowerCase())){toast('此分類已存在');return}
+ const historical=Object.values(state.data).flat().find(t=>categoryLabel(t.category)===name)?.category;
+ const key=historical||name;Object.defineProperty(state.budgets,key,{value:budget,writable:true,enumerable:true,configurable:true});budgetOrder=categoryKeys();save();render();renderCategoryOptions();e.target.reset();toast('已新增分類');
+});
 $('#prevMonth').onclick=()=>{state.month=new Date(state.month.getFullYear(),state.month.getMonth()-1,1);render()};
 $('#nextMonth').onclick=()=>{state.month=new Date(state.month.getFullYear(),state.month.getMonth()+1,1);render()};
 $('#monthLabel').onclick=()=>{const v=prompt('輸入月份（YYYY-MM）',monthKey());if(/^\d{4}-\d{2}$/.test(v||'')){const [y,m]=v.split('-').map(Number);state.month=new Date(y,m-1,1);render()}};
